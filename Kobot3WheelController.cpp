@@ -706,22 +706,34 @@ bool Kobot3WheelController::ProcessOdometricLocalization()
 extern "C"
 {
 	__declspec(dllexport) OprosApi* GetAPI();
+	__declspec(dllexport) void ReleaseAPI(OprosApi* pOprosApi);
 }
 
 OprosApi* GetAPI()
 {
 	return new Kobot3WheelController();
+}
+
+void ReleaseAPI(OprosApi* pOprosApi)
+{
+	delete pOprosApi;
 }
 
 #else
 extern "C"
 {
 	OprosApi* GetAPI();
+	void ReleaseAPI(OprosApi* pOprosApi);
 }
 
 OprosApi* GetAPI()
 {
 	return new Kobot3WheelController();
+}
+
+void ReleaseAPI(OprosApi* pOprosApi)
+{
+	delete pOprosApi;
 }
 
 #endif
