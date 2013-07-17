@@ -1,12 +1,12 @@
 ﻿#include "Kobot3WheelController.h"
 
+#include <boost/chrono.hpp>
+
 #include <device/OprosPrintMessage.h>
 #include <device/OprosTimer.h>
 
-#include <boost/chrono.hpp>
-
 #include "debug_macro.h"
-
+#include "Kobot3MotionBoard.h"
 
 //Define Required Profile Name List
 #define WHEEL_DIAMETER "WheelDiameter"
@@ -25,7 +25,7 @@ class SimpleTimer
 public:
 	SimpleTimer()
 	{
-		startTime = boost::chrono::high_resolution_clock::now();
+		Reset();
 	}
 
 public:
@@ -34,12 +34,18 @@ public:
 		return (unsigned long)boost::chrono::duration_cast<boost::chrono::milliseconds>(boost::chrono::high_resolution_clock::now() - startTime).count();
 	}
 
+	void Reset()
+	{
+		startTime = boost::chrono::high_resolution_clock::now();
+	}
+
 private:
 	boost::chrono::high_resolution_clock::time_point startTime;
 };
 
 Kobot3WheelController::Kobot3WheelController()
-	: mLeftMotorId(1), mRightMotorId(0), mTimer(*new SimpleTimer)
+	: mLeftMotorId(1), mRightMotorId(0), mpMotionBoard(new Kobot3MotionBoard)
+	, mpTimer(new SimpleTimer)
 {
 }
 
@@ -57,6 +63,8 @@ int Kobot3WheelController::Initialize( Property parameter )
 	}
 
 	//////////////////////////////////////////////////////////////////////////
+	
+	mpTimer->Reset();
 
 	if (SetProperty(parameter) == false)
 	{
@@ -71,7 +79,7 @@ int Kobot3WheelController::Initialize( Property parameter )
 		return API_ERROR;
 	}
 
-	if (mMotionBoard.SetMotionBoardId(motionBoardIdList[0]) == false)
+	if (mpMotionBoard->SetMotionBoardId(motionBoardIdList[0]) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("").c_str());
 		return API_ERROR;
@@ -111,13 +119,13 @@ int Kobot3WheelController::Enable()
 
 	//////////////////////////////////////////////////////////////////////////
 
-	if(mMotionBoard.Enable() == false)
+	if(mpMotionBoard->Enable() == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't enable Kobot3 motion board").c_str());
 		return API_ERROR;
 	}
 
-	if (mMotionBoard.Stop(mLeftMotorId, FreeWheeling, mRightMotorId, FreeWheeling) == false)
+	if (mpMotionBoard->Stop(mLeftMotorId, FreeWheeling, mRightMotorId, FreeWheeling) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't stop motor").c_str());
 		return API_ERROR;
@@ -126,7 +134,7 @@ int Kobot3WheelController::Enable()
 	Kobot3WheelControllerProfile profile = mProfile;
 
 	OprosSleep(10);
-	if(mMotionBoard.SetPulsePerRotation(mLeftMotorId, (float)profile.encoderPulsePerRotation
+	if(mpMotionBoard->SetPulsePerRotation(mLeftMotorId, (float)profile.encoderPulsePerRotation
 		, mRightMotorId, (float)profile.encoderPulsePerRotation) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't set pulse per rotation").c_str());
@@ -134,7 +142,7 @@ int Kobot3WheelController::Enable()
 	}
 
 	OprosSleep(10);
-	if(mMotionBoard.SetPID(mLeftMotorId, (float)profile.controlPGain
+	if(mpMotionBoard->SetPID(mLeftMotorId, (float)profile.controlPGain
 		, (float)profile.controlIGain, (float)profile.controlDGain) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't set PID of left motor").c_str());
@@ -142,7 +150,7 @@ int Kobot3WheelController::Enable()
 	}
 
 	OprosSleep(10);
-	if(mMotionBoard.SetPID(mRightMotorId, (float)profile.controlPGain
+	if(mpMotionBoard->SetPID(mRightMotorId, (float)profile.controlPGain
 		, (float)profile.controlIGain, (float)profile.controlDGain) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't set PID of right motor").c_str());
@@ -152,7 +160,7 @@ int Kobot3WheelController::Enable()
 	OprosSleep(10);
 	int32_t milliRotatePositionErrorLimit
 		= INTEGER(profile.controlPositionErrorLimit * 1000.0  / 360.0);
-	if(mMotionBoard.SetPositionErrorLimit(mLeftMotorId, milliRotatePositionErrorLimit
+	if(mpMotionBoard->SetPositionErrorLimit(mLeftMotorId, milliRotatePositionErrorLimit
 		, mRightMotorId, milliRotatePositionErrorLimit) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't set position error limit").c_str());
@@ -161,7 +169,7 @@ int Kobot3WheelController::Enable()
 
 	OprosSleep(10);
 	int32_t milliRotateAcceleration = INTEGER(profile.acceleration * 1000.0 / (profile.wheelDiameter * M_PI));
-	if(mMotionBoard.SetAcceleration(mLeftMotorId, milliRotateAcceleration
+	if(mpMotionBoard->SetAcceleration(mLeftMotorId, milliRotateAcceleration
 		, mRightMotorId, milliRotateAcceleration) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't set acceleration").c_str());
@@ -184,7 +192,7 @@ int Kobot3WheelController::Enable()
 
 int Kobot3WheelController::Disable()
 {
-	SimpleReaderWriterLock::ScopedWriterLock scopedWriterLock(m_rwLockStatus);
+	SimpleReaderWriterLock::ScopedWriterLock scopedWriterLock(mRwLockStatus);
 	if (_status == DEVICE_READY)
 	{
 		PrintMessage(DEBUG_MESSAGE("Already disabled").c_str());
@@ -198,14 +206,14 @@ int Kobot3WheelController::Disable()
 
 	//////////////////////////////////////////////////////////////////////////
 
-	if (mMotionBoard.Stop(mLeftMotorId, FreeWheeling
+	if (mpMotionBoard->Stop(mLeftMotorId, FreeWheeling
 		, mRightMotorId, FreeWheeling) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't stop wheel").c_str());
 		return API_ERROR;
 	}
 
-	if (mMotionBoard.Disable() == false)
+	if (mpMotionBoard->Disable() == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't disable Kobot3 motion board").c_str());
 		return API_ERROR;
@@ -307,7 +315,7 @@ int Kobot3WheelController::GetParameter( Property &parameter )
 
 int Kobot3WheelController::OnExecute()
 {
-	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(m_rwLockStatus);
+	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(mRwLockStatus);
 	if (_status != DEVICE_ACTIVE)
 	{
 		PrintMessage(DEBUG_MESSAGE("Precondition not met").c_str());
@@ -327,7 +335,7 @@ int Kobot3WheelController::OnExecute()
 
 int Kobot3WheelController::SetPosition( ObjectLocation position )
 {
-	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(m_rwLockStatus);
+	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(mRwLockStatus);
 	if (_status != DEVICE_ACTIVE)
 	{
 		PrintMessage(DEBUG_MESSAGE("Precondition not met").c_str());
@@ -347,7 +355,7 @@ int Kobot3WheelController::SetPosition( ObjectLocation position )
 
 int Kobot3WheelController::GetPosition( ObjectLocation &position )
 {
-	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(m_rwLockStatus);
+	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(mRwLockStatus);
 	if (_status != DEVICE_ACTIVE)
 	{
 		PrintMessage(DEBUG_MESSAGE("Precondition not met").c_str());
@@ -374,7 +382,7 @@ int Kobot3WheelController::GetPosition( ObjectLocation &position )
 
 int Kobot3WheelController::GetOdometery( vector<long> &odometery )
 {
-	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(m_rwLockStatus);
+	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(mRwLockStatus);
 	if (_status != DEVICE_ACTIVE)
 	{
 		PrintMessage(DEBUG_MESSAGE("Precondition not met").c_str());
@@ -386,7 +394,7 @@ int Kobot3WheelController::GetOdometery( vector<long> &odometery )
 	int32_t leftMotorEncoder;
 	int32_t rightMotorEncoder;
 
-	if(mMotionBoard.GetEncoder(mLeftMotorId, leftMotorEncoder
+	if(mpMotionBoard->GetEncoder(mLeftMotorId, leftMotorEncoder
 		, mRightMotorId, rightMotorEncoder) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't get encoder").c_str());
@@ -403,7 +411,7 @@ int Kobot3WheelController::GetOdometery( vector<long> &odometery )
 
 int Kobot3WheelController::DriveWheel( double linearVelocity, double angularVelocity )
 {
-	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(m_rwLockStatus);
+	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(mRwLockStatus);
 	if (_status != DEVICE_ACTIVE)
 	{
 		PrintMessage(DEBUG_MESSAGE("Precondition not met").c_str());
@@ -426,7 +434,7 @@ int Kobot3WheelController::DriveWheel( double linearVelocity, double angularVelo
 	int32_t leftMilliRoatePerSec = INTEGER(leftWheelSpeed * 1000.0 / wheelCircumference);
 	int32_t rightMilliRotatePerSec = INTEGER(rightWheelSpeed * 1000.0 / wheelCircumference);
 
-	if (mMotionBoard.ControlVelocity(mLeftMotorId, leftMilliRoatePerSec
+	if (mpMotionBoard->ControlVelocity(mLeftMotorId, leftMilliRoatePerSec
 		, mRightMotorId, -rightMilliRotatePerSec) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't control velocity").c_str());
@@ -439,7 +447,7 @@ int Kobot3WheelController::DriveWheel( double linearVelocity, double angularVelo
 
 int Kobot3WheelController::MoveWheel( double distance, double linearVelocity )
 {
-	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(m_rwLockStatus);
+	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(mRwLockStatus);
 	if (_status != DEVICE_ACTIVE)
 	{
 		PrintMessage(DEBUG_MESSAGE("Precondition not met").c_str());
@@ -461,14 +469,14 @@ int Kobot3WheelController::MoveWheel( double distance, double linearVelocity )
 	if (linearVelocity < 0.0)
 		milliRotate = -milliRotate;
 
-	if (mMotionBoard.SetMaxVelocity(mLeftMotorId, milliRotatePerSec
+	if (mpMotionBoard->SetMaxVelocity(mLeftMotorId, milliRotatePerSec
 		, mRightMotorId, milliRotatePerSec) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't set max velocity for control position").c_str());
 		return API_ERROR;
 	}
 
-	if(mMotionBoard.ControlPosition(mLeftMotorId, milliRotate
+	if(mpMotionBoard->ControlPosition(mLeftMotorId, milliRotate
 		, mRightMotorId, -milliRotate) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't control position").c_str());
@@ -481,7 +489,7 @@ int Kobot3WheelController::MoveWheel( double distance, double linearVelocity )
 
 int Kobot3WheelController::RotateWheel( double angle, double angularVelocity )
 {
-	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(m_rwLockStatus);
+	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(mRwLockStatus);
 	if (_status != DEVICE_ACTIVE)
 	{
 		PrintMessage(DEBUG_MESSAGE("Precondition not met").c_str());
@@ -501,14 +509,14 @@ int Kobot3WheelController::RotateWheel( double angle, double angularVelocity )
 	if(angularVelocity < 0.0)
 		milliRotate = -milliRotate;
 
-	if (mMotionBoard.SetMaxVelocity(mLeftMotorId, milliRotatePerSec
+	if (mpMotionBoard->SetMaxVelocity(mLeftMotorId, milliRotatePerSec
 		, mRightMotorId, milliRotatePerSec) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't set max velocity for control position").c_str());
 		return API_ERROR;
 	}
 
-	if(mMotionBoard.ControlPosition(mLeftMotorId, -milliRotate
+	if(mpMotionBoard->ControlPosition(mLeftMotorId, -milliRotate
 		, mRightMotorId, -milliRotate) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't control position").c_str());
@@ -521,7 +529,7 @@ int Kobot3WheelController::RotateWheel( double angle, double angularVelocity )
 
 int Kobot3WheelController::StopWheel()
 {
-	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(m_rwLockStatus);
+	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(mRwLockStatus);
 	if (_status != DEVICE_ACTIVE)
 	{
 		PrintMessage(DEBUG_MESSAGE("Precondition not met").c_str());
@@ -530,7 +538,7 @@ int Kobot3WheelController::StopWheel()
 
 	//////////////////////////////////////////////////////////////////////////
 
-	if (mMotionBoard.Stop(mLeftMotorId, DeaccelerationStop
+	if (mpMotionBoard->Stop(mLeftMotorId, DeaccelerationStop
 		, mRightMotorId, DeaccelerationStop) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't stop motor").c_str());
@@ -543,7 +551,7 @@ int Kobot3WheelController::StopWheel()
 
 int Kobot3WheelController::IsWheelRunning( bool &isWheelRunning )
 {
-	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(m_rwLockStatus);
+	SimpleReaderWriterLock::ScopedReaderLock sopedReaderLock(mRwLockStatus);
 	if (_status != DEVICE_ACTIVE)
 	{
 		PrintMessage(DEBUG_MESSAGE("Precondition not met").c_str());
@@ -555,7 +563,7 @@ int Kobot3WheelController::IsWheelRunning( bool &isWheelRunning )
 	int32_t leftWheelSpeed;
 	int32_t rightWheelSpeed;
 
-	if (mMotionBoard.GetVelocity(mLeftMotorId, leftWheelSpeed
+	if (mpMotionBoard->GetVelocity(mLeftMotorId, leftWheelSpeed
 		, mRightMotorId, rightWheelSpeed) == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't get motor velocity").c_str());
@@ -632,13 +640,13 @@ bool Kobot3WheelController::ProcessOdometricLocalization()
 	{
 		int32_t leftWheelPosition;
 		int32_t rightWheelPosition;
-		if (mMotionBoard.GetPosition(mLeftMotorId, leftWheelPosition
+		if (mpMotionBoard->GetPosition(mLeftMotorId, leftWheelPosition
 			, mRightMotorId, rightWheelPosition) == false)
 		{
 			PrintMessage(DEBUG_MESSAGE("Can't get motor position").c_str());
 			return false;
 		}
-		motorPosition.time = mTimer.GetTimeTick();
+		motorPosition.time = mpTimer->GetTimeTick();
 		motorPosition.leftPosition = (leftWheelPosition / 1000.0) * 2 * M_PI;
 		motorPosition.rightPosition = (-rightWheelPosition / 1000.0) * 2 * M_PI;
 	}

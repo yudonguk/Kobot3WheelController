@@ -1,16 +1,13 @@
-#ifndef __KOBOT_3_WHEEL_CONTROLLER_H__
+﻿#ifndef __KOBOT_3_WHEEL_CONTROLLER_H__
 #define __KOBOT_3_WHEEL_CONTROLLER_H__
 
 #include <device/WheelController.h>
+#include <device/ServoActuator.h>
 
-#include "Kobot3MotionBoard.h"
 #include "SimpleLock.h"
 
-
-#include <device/ServoActuator.h>
-#include <device/OprosTimer.h>
-
 class SimpleTimer;
+class Kobot3MotionBoard;
 
 class Kobot3WheelController : public WheelController
 {
@@ -24,7 +21,7 @@ public:
 			axleDistance = 0.32; 
 			acceleration = 0.4;
 			maximumVelocity = 0.2;
-			
+
 			encoderPulsePerRotation = 1482;
 			controlPositionErrorLimit = 5.0;
 			controlPGain = 0.033;
@@ -55,6 +52,11 @@ public:
 	Kobot3WheelController();
 	~Kobot3WheelController();
 
+private:
+	// 복사 생성자 및 연산자 제거
+	Kobot3WheelController(const Kobot3WheelController&);
+	const Kobot3WheelController& operator=(const Kobot3WheelController&);
+
 public:
 	virtual int Initialize(Property parameter);
 	virtual int Finalize();
@@ -84,11 +86,11 @@ private:
 
 	Kobot3WheelControllerProfile mProfile;
 
-	Kobot3MotionBoard mMotionBoard;
+	std::unique_ptr<Kobot3MotionBoard> mpMotionBoard;
 
-	SimpleReaderWriterLock m_rwLockStatus;
+	SimpleReaderWriterLock mRwLockStatus;
 
-	SimpleTimer& mTimer;
+	std::unique_ptr<SimpleTimer> mpTimer;
 	MotorPosition mPreviousMotorPosition;
 	ObjectLocation mWheelPosition;
 	SimpleMutex mMutexWheelPosition;
