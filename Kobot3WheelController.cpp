@@ -1,4 +1,4 @@
-#include "Kobot3WheelController.h"
+ï»¿#include "Kobot3WheelController.h"
 
 #include <device/OprosPrintMessage.h>
 #include <device/OprosTimer.h>
@@ -31,7 +31,7 @@ public:
 public:
 	unsigned long GetTimeTick()
 	{
-		return boost::chrono::duration_cast<boost::chrono::milliseconds>(boost::chrono::high_resolution_clock::now() - startTime).count();;
+		return (unsigned long)boost::chrono::duration_cast<boost::chrono::milliseconds>(boost::chrono::high_resolution_clock::now() - startTime).count();
 	}
 
 private:
@@ -76,7 +76,7 @@ int Kobot3WheelController::Initialize( Property parameter )
 		PrintMessage(DEBUG_MESSAGE("").c_str());
 		return API_ERROR;
 	}
-	
+
 	//////////////////////////////////////////////////////////////////////////
 	_status = DEVICE_READY;
 	return API_SUCCESS;
@@ -110,7 +110,7 @@ int Kobot3WheelController::Enable()
 	}
 
 	//////////////////////////////////////////////////////////////////////////
-	
+
 	if(mMotionBoard.Enable() == false)
 	{
 		PrintMessage(DEBUG_MESSAGE("Can't enable Kobot3 motion board").c_str());
@@ -171,7 +171,7 @@ int Kobot3WheelController::Enable()
 	mWheelPosition.x = 0.0;
 	mWheelPosition.y = 0.0;
 	mWheelPosition.theta = 0.0;
-	
+
 	mPreviousMotorPosition.leftPosition = 0;
 	mPreviousMotorPosition.rightPosition = 0;
 	mPreviousMotorPosition.time = 0;
@@ -299,7 +299,7 @@ int Kobot3WheelController::GetParameter( Property &parameter )
 	stringConverter << profile.controlDGain;
 	parameter.SetValue(CONTROL_D_GAIN, stringConverter.str());
 	stringConverter.str("");
-		
+
 	//////////////////////////////////////////////////////////////////////////
 
 	return API_SUCCESS;
@@ -355,7 +355,7 @@ int Kobot3WheelController::GetPosition( ObjectLocation &position )
 	}
 
 	//////////////////////////////////////////////////////////////////////////
-	
+
 	mMutexWheelPosition.Lock();
 	position = mWheelPosition;
 	position.theta = RAD2DEG(mWheelPosition.theta);
@@ -367,7 +367,7 @@ int Kobot3WheelController::GetPosition( ObjectLocation &position )
 	std::cout << "WheelPosition.theta : " << position.theta << std::endl;
 	std::cout << "--------------------------------" << std::endl;
 	*/
-	
+
 	//////////////////////////////////////////////////////////////////////////
 	return API_SUCCESS;
 }
@@ -416,13 +416,13 @@ int Kobot3WheelController::DriveWheel( double linearVelocity, double angularVelo
 
 	const double differenceWheelVelocity = mProfile.axleDistance * DEG2RAD(angularVelocity) / 2.0;
 
-	//¼±¼Óµµ ¹× °¢¼Óµµ¿¡ ÀÇÇÑ ¾çÂÊ ¹ÙÄûÀÇ ¼±¼Óµµ
+	//ì„ ì†ë„ ë° ê°ì†ë„ì— ì˜í•œ ì–‘ìª½ ë°”í€´ì˜ ì„ ì†ë„
 	double rightWheelSpeed = linearVelocity + differenceWheelVelocity;
 	double leftWheelSpeed = linearVelocity - differenceWheelVelocity;
-	
+
 	const double wheelCircumference = (mProfile.wheelDiameter * M_PI);
 
-	//m/s ¿¡¼­ mRotate/s ·Î º¯°æ
+	//m/s ì—ì„œ mRotate/s ë¡œ ë³€ê²½
 	int32_t leftMilliRoatePerSec = INTEGER(leftWheelSpeed * 1000.0 / wheelCircumference);
 	int32_t rightMilliRotatePerSec = INTEGER(rightWheelSpeed * 1000.0 / wheelCircumference);
 
@@ -449,13 +449,13 @@ int Kobot3WheelController::MoveWheel( double distance, double linearVelocity )
 	//////////////////////////////////////////////////////////////////////////
 
 	linearVelocity = bound(linearVelocity, -mProfile.maximumVelocity, mProfile.maximumVelocity);
-	
+
 	const double wheelCircumference = (mProfile.wheelDiameter * M_PI);
 
-	//m ¿¡¼­ mRotate ·Î º¯È¯
+	//m ì—ì„œ mRotate ë¡œ ë³€í™˜
 	int32_t milliRotate = INTEGER(distance * 1000.0 / wheelCircumference);
 
-	//m/s ¿¡¼­ mRotate/s ·Î º¯È¯
+	//m/s ì—ì„œ mRotate/s ë¡œ ë³€í™˜
 	int32_t milliRotatePerSec = abs(INTEGER(linearVelocity * 1000.0 / wheelCircumference));
 
 	if (linearVelocity < 0.0)
@@ -474,7 +474,7 @@ int Kobot3WheelController::MoveWheel( double distance, double linearVelocity )
 		PrintMessage(DEBUG_MESSAGE("Can't control position").c_str());
 		return API_ERROR;
 	}
-	
+
 	//////////////////////////////////////////////////////////////////////////
 	return API_SUCCESS;
 }
@@ -491,16 +491,16 @@ int Kobot3WheelController::RotateWheel( double angle, double angularVelocity )
 	//////////////////////////////////////////////////////////////////////////
 
 	const double degreeToRotation = mProfile.axleDistance / (360.0 * mProfile.wheelDiameter);
-		
-	// degree ¿¡¼­ mRotate·Î º¯È¯
+
+	// degree ì—ì„œ mRotateë¡œ ë³€í™˜
 	int32_t milliRotate = INTEGER(angle * 1000 * degreeToRotation);
 
-	// degree/s ¿¡¼­ mRotate/s·Î º¯È¯
+	// degree/s ì—ì„œ mRotate/së¡œ ë³€í™˜
 	int32_t milliRotatePerSec = abs(INTEGER(angularVelocity * 1000 * degreeToRotation));
 
 	if(angularVelocity < 0.0)
 		milliRotate = -milliRotate;
-	
+
 	if (mMotionBoard.SetMaxVelocity(mLeftMotorId, milliRotatePerSec
 		, mRightMotorId, milliRotatePerSec) == false)
 	{
@@ -651,7 +651,7 @@ bool Kobot3WheelController::ProcessOdometricLocalization()
 		const double dt = (motorPosition.time - mPreviousMotorPosition.time) / 1000.0;
 		const double linearVelocity = mProfile.wheelDiameter * (deltaRightPosition + deltaLeftPosition) / (4 * dt);
 		const double angularVelocity = mProfile.wheelDiameter * (deltaRightPosition - deltaLeftPosition) / (2 * mProfile.axleDistance * dt);
-	
+
 		if (!_finite(angularVelocity))
 		{
 			//__asm int 3;
@@ -687,7 +687,7 @@ bool Kobot3WheelController::ProcessOdometricLocalization()
 		}
 		mMutexWheelPosition.Unlock();
 	}
-	
+
 	mPreviousMotorPosition = motorPosition;
 
 	return true;
