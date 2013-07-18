@@ -20,7 +20,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
@@ -94,12 +94,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Kobot3WheelController.cpp" />
+    <ClCompile Include="Notifier.cpp" />
     <ClCompile Include="test_main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="debug_macro.h" />
     <ClInclude Include="Kobot3MotionBoard.h" />
     <ClInclude Include="Kobot3WheelController.h" />
+    <ClInclude Include="Notifier.h" />
     <ClInclude Include="SimpleLock.h" />
   </ItemGroup>
   <ItemGroup>
