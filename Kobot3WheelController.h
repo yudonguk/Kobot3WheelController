@@ -1,12 +1,18 @@
 ﻿#ifndef __KOBOT_3_WHEEL_CONTROLLER_H__
 #define __KOBOT_3_WHEEL_CONTROLLER_H__
 
+#include <memory>
+#include <functional>
+#include <queue>
+#include <cstdint>
+
 #include <device/WheelController.h>
 #include <device/ServoActuator.h>
 
 #include "SimpleLock.h"
 
 class SimpleTimer;
+class Notifier;
 class Kobot3MotionBoard;
 
 class Kobot3WheelController : public WheelController
@@ -84,6 +90,8 @@ private:
 	const unsigned char mLeftMotorId;
 	const unsigned char mRightMotorId;
 
+	const uint32_t mTimeout;
+
 	Kobot3WheelControllerProfile mProfile;
 
 	std::unique_ptr<Kobot3MotionBoard> mpMotionBoard;
@@ -94,6 +102,9 @@ private:
 	MotorPosition mPreviousMotorPosition;
 	ObjectLocation mWheelPosition;
 	SimpleMutex mMutexWheelPosition;
+
+	std::queue<std::pair<std::function<void()>, std::shared_ptr<Notifier>>> mCommandQueue;
+	SimpleMutex mCommandQueueMutex;
 };
 
 #endif

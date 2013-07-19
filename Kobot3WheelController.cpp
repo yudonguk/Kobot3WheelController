@@ -7,6 +7,7 @@
 
 #include "debug_macro.h"
 #include "Kobot3MotionBoard.h"
+#include "Notifier.h"
 
 //Define Required Profile Name List
 #define WHEEL_DIAMETER "WheelDiameter"
@@ -45,7 +46,7 @@ private:
 
 Kobot3WheelController::Kobot3WheelController()
 	: mLeftMotorId(1), mRightMotorId(0), mpMotionBoard(new Kobot3MotionBoard)
-	, mpTimer(new SimpleTimer)
+	, mpTimer(new SimpleTimer), mTimeout(100)
 {
 }
 
@@ -185,7 +186,6 @@ int Kobot3WheelController::Enable()
 	mPreviousMotorPosition.time = 0;
 
 	//////////////////////////////////////////////////////////////////////////
-
 	_status = DEVICE_ACTIVE;
 	return API_SUCCESS;
 }
@@ -329,6 +329,22 @@ int Kobot3WheelController::OnExecute()
 		return API_ERROR;
 	}
 
+	for (; mCommandQueue.empty(); )
+	{
+		mCommandQueueMutex.Lock();
+		auto command = mCommandQueue.front();
+		mCommandQueue.pop();
+		mCommandQueueMutex.Unlock();		
+
+		auto& pNotifier = command.second;
+
+		if (!pNotifier->IsCanceled())
+		{
+			command.first();
+			pNotifier->Notify();
+		}
+	}	
+
 	//////////////////////////////////////////////////////////////////////////
 	return API_SUCCESS;
 }
@@ -391,22 +407,38 @@ int Kobot3WheelController::GetOdometery( vector<long> &odometery )
 
 	//////////////////////////////////////////////////////////////////////////
 
-	int32_t leftMotorEncoder;
-	int32_t rightMotorEncoder;
+	odometery.resize(2);
 
-	if(mpMotionBoard->GetEncoder(mLeftMotorId, leftMotorEncoder
-		, mRightMotorId, rightMotorEncoder) == false)
+	int result = API_ERROR;
+	std::shared_ptr<Notifier>& pNotifier = Notifier::Allocate();
+
+	mCommandQueueMutex.Lock();
+	mCommandQueue.push(std::make_pair([this, &odometery, &result]()
 	{
-		PrintMessage(DEBUG_MESSAGE("Can't get encoder").c_str());
+		int32_t leftMotorEncoder;
+		int32_t rightMotorEncoder;
+
+		if(mpMotionBoard->GetEncoder(mLeftMotorId, leftMotorEncoder
+			, mRightMotorId, rightMotorEncoder) == false)
+		{
+			PrintMessage(DEBUG_MESSAGE("Can't get encoder").c_str());
+			result = API_ERROR;
+			return;
+		}
+
+		odometery[0] = leftMotorEncoder;
+		odometery[1] = -rightMotorEncoder;
+		result = API_SUCCESS;
+	}, pNotifier));
+	mCommandQueueMutex.Unlock();
+
+	if (!pNotifier->Wait(mTimeout))
+	{
+		pNotifier->Cancel();
 		return API_ERROR;
 	}
 
-	odometery.resize(2);
-	odometery[0] = leftMotorEncoder;
-	odometery[1] = -rightMotorEncoder;
-
-	//////////////////////////////////////////////////////////////////////////
-	return API_SUCCESS;
+	return result;
 }
 
 int Kobot3WheelController::DriveWheel( double linearVelocity, double angularVelocity )
@@ -434,15 +466,31 @@ int Kobot3WheelController::DriveWheel( double linearVelocity, double angularVelo
 	int32_t leftMilliRoatePerSec = INTEGER(leftWheelSpeed * 1000.0 / wheelCircumference);
 	int32_t rightMilliRotatePerSec = INTEGER(rightWheelSpeed * 1000.0 / wheelCircumference);
 
-	if (mpMotionBoard->ControlVelocity(mLeftMotorId, leftMilliRoatePerSec
-		, mRightMotorId, -rightMilliRotatePerSec) == false)
-	{
-		PrintMessage(DEBUG_MESSAGE("Can't control velocity").c_str());
-		return API_ERROR;
-	}	
+	int result = API_ERROR;
+	std::shared_ptr<Notifier>& pNotifier = Notifier::Allocate();
 
-	//////////////////////////////////////////////////////////////////////////
-	return API_SUCCESS;
+	mCommandQueueMutex.Lock();
+	mCommandQueue.push(std::make_pair([this, &leftMilliRoatePerSec, &rightMilliRotatePerSec, &result]()
+	{
+		if (mpMotionBoard->ControlVelocity(mLeftMotorId, leftMilliRoatePerSec
+			, mRightMotorId, -rightMilliRotatePerSec) == false)
+		{
+			PrintMessage(DEBUG_MESSAGE("Can't control velocity").c_str());
+			result = API_ERROR;
+			return;
+		}
+
+		result = API_SUCCESS;
+	}, pNotifier));
+	mCommandQueueMutex.Unlock();
+
+	if (!pNotifier->Wait(mTimeout))
+	{
+		pNotifier->Cancel();
+		return API_ERROR;
+	}
+
+	return result;
 }
 
 int Kobot3WheelController::MoveWheel( double distance, double linearVelocity )
@@ -468,23 +516,40 @@ int Kobot3WheelController::MoveWheel( double distance, double linearVelocity )
 
 	if (linearVelocity < 0.0)
 		milliRotate = -milliRotate;
+	
+	int result = API_ERROR;
+	std::shared_ptr<Notifier>& pNotifier = Notifier::Allocate();
 
-	if (mpMotionBoard->SetMaxVelocity(mLeftMotorId, milliRotatePerSec
-		, mRightMotorId, milliRotatePerSec) == false)
+	mCommandQueueMutex.Lock();
+	mCommandQueue.push(std::make_pair([this, &milliRotate, &milliRotatePerSec, &result]()
 	{
-		PrintMessage(DEBUG_MESSAGE("Can't set max velocity for control position").c_str());
+		if (mpMotionBoard->SetMaxVelocity(mLeftMotorId, milliRotatePerSec
+			, mRightMotorId, milliRotatePerSec) == false)
+		{
+			PrintMessage(DEBUG_MESSAGE("Can't set max velocity for control position").c_str());
+			result = API_ERROR;
+			return;
+		}
+
+		if(mpMotionBoard->ControlPosition(mLeftMotorId, milliRotate
+			, mRightMotorId, -milliRotate) == false)
+		{
+			PrintMessage(DEBUG_MESSAGE("Can't control position").c_str());
+			result =  API_ERROR;
+			return;
+		}
+
+		result = API_SUCCESS;
+	}, pNotifier));
+	mCommandQueueMutex.Unlock();
+
+	if (!pNotifier->Wait(mTimeout))
+	{
+		pNotifier->Cancel();
 		return API_ERROR;
 	}
 
-	if(mpMotionBoard->ControlPosition(mLeftMotorId, milliRotate
-		, mRightMotorId, -milliRotate) == false)
-	{
-		PrintMessage(DEBUG_MESSAGE("Can't control position").c_str());
-		return API_ERROR;
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	return API_SUCCESS;
+	return result;
 }
 
 int Kobot3WheelController::RotateWheel( double angle, double angularVelocity )
@@ -509,22 +574,42 @@ int Kobot3WheelController::RotateWheel( double angle, double angularVelocity )
 	if(angularVelocity < 0.0)
 		milliRotate = -milliRotate;
 
-	if (mpMotionBoard->SetMaxVelocity(mLeftMotorId, milliRotatePerSec
-		, mRightMotorId, milliRotatePerSec) == false)
+	std::vector<int >d;d.push_back(1);
+
+
+	int result = API_ERROR;
+	std::shared_ptr<Notifier>& pNotifier = Notifier::Allocate();
+
+	mCommandQueueMutex.Lock();
+	mCommandQueue.push(std::make_pair([this, &milliRotate, &milliRotatePerSec, &result]()
 	{
-		PrintMessage(DEBUG_MESSAGE("Can't set max velocity for control position").c_str());
+		if (mpMotionBoard->SetMaxVelocity(mLeftMotorId, milliRotatePerSec
+			, mRightMotorId, milliRotatePerSec) == false)
+		{
+			PrintMessage(DEBUG_MESSAGE("Can't set max velocity for control position").c_str());
+			result = API_ERROR;
+			return;
+		}
+
+		if(mpMotionBoard->ControlPosition(mLeftMotorId, -milliRotate
+			, mRightMotorId, -milliRotate) == false)
+		{
+			PrintMessage(DEBUG_MESSAGE("Can't control position").c_str());
+			result = API_ERROR;
+			return;
+		}	
+
+		result = API_SUCCESS;
+	}, pNotifier));
+	mCommandQueueMutex.Unlock();
+
+	if (!pNotifier->Wait(mTimeout))
+	{
+		pNotifier->Cancel();
 		return API_ERROR;
 	}
 
-	if(mpMotionBoard->ControlPosition(mLeftMotorId, -milliRotate
-		, mRightMotorId, -milliRotate) == false)
-	{
-		PrintMessage(DEBUG_MESSAGE("Can't control position").c_str());
-		return API_ERROR;
-	}
-
-	//////////////////////////////////////////////////////////////////////////	
-	return API_SUCCESS;
+	return result;
 }
 
 int Kobot3WheelController::StopWheel()
@@ -538,15 +623,31 @@ int Kobot3WheelController::StopWheel()
 
 	//////////////////////////////////////////////////////////////////////////
 
-	if (mpMotionBoard->Stop(mLeftMotorId, DeaccelerationStop
-		, mRightMotorId, DeaccelerationStop) == false)
+	int result = API_ERROR;
+	std::shared_ptr<Notifier>& pNotifier = Notifier::Allocate();
+
+	mCommandQueueMutex.Lock();
+	mCommandQueue.push(std::make_pair([this, &result]()
 	{
-		PrintMessage(DEBUG_MESSAGE("Can't stop motor").c_str());
+		if (mpMotionBoard->Stop(mLeftMotorId, DeaccelerationStop
+			, mRightMotorId, DeaccelerationStop) == false)
+		{
+			PrintMessage(DEBUG_MESSAGE("Can't stop motor").c_str());
+			result = API_ERROR;
+			return;
+		}
+
+		result = API_SUCCESS;
+	}, pNotifier));
+	mCommandQueueMutex.Unlock();
+		
+	if (!pNotifier->Wait(mTimeout))
+	{
+		pNotifier->Cancel();
 		return API_ERROR;
 	}
 
-	/////////////////////////////////////////////////////////////////////////
-	return API_SUCCESS;
+	return result;
 }
 
 int Kobot3WheelController::IsWheelRunning( bool &isWheelRunning )
